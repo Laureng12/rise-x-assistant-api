@@ -1,0 +1,246 @@
+openapi: 3.1.0
+info:
+  title: Rise-X Founder Assistant API
+  version: 1.0.0
+  description: API actions for reading messages, drafting responses, saving drafts, and creating follow-up tasks.
+servers:
+  - url: https://api.yourdomain.com
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check API health
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /messages/unread:
+    get:
+      operationId: getUnreadMessages
+      summary: Get unread messages
+      description: Returns unread or recent messages from connected communication sources.
+      parameters:
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [gmail, outlook, slack, sms, crm, helpdesk, all]
+            default: all
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: List of unread messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+  /messages/{message_id}/thread:
+    get:
+      operationId: getMessageThread
+      summary: Get full message thread
+      description: Returns the full thread context for a message.
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Message thread
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  thread:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Message"
+  /responses/draft:
+    post:
+      operationId: draftResponse
+      summary: Draft a response
+      description: Drafts a response to a message in Lauren's preferred style.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, response_goal]
+              properties:
+                message_id:
+                  type: string
+                response_goal:
+                  type: string
+                  description: What the response should accomplish.
+                tone:
+                  type: string
+                  enum: [concise, warm, executive, friendly, firm, apologetic, sales, support]
+                  default: executive
+                include_context:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Drafted response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DraftResponse"
+  /responses/save-draft:
+    post:
+      operationId: saveDraft
+      summary: Save response draft
+      description: Saves a response draft to the original message source.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_id, body]
+              properties:
+                message_id:
+                  type: string
+                subject:
+                  type: string
+                body:
+                  type: string
+      responses:
+        "200":
+          description: Draft saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft_id:
+                    type: string
+                  status:
+                    type: string
+  /responses/send-approved:
+    post:
+      operationId: sendApprovedResponse
+      summary: Send an approved response
+      description: Sends a response only after explicit user approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [draft_id, approval_confirmation]
+              properties:
+                draft_id:
+                  type: string
+                approval_confirmation:
+                  type: string
+                  description: Explicit approval text from Lauren.
+      responses:
+        "200":
+          description: Response sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent_message_id:
+                    type: string
+                  status:
+                    type: string
+  /tasks:
+    post:
+      operationId: createTask
+      summary: Create follow-up task
+      description: Creates a follow-up task from a message or conversation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                owner:
+                  type: string
+                  default: Lauren
+                due_date:
+                  type: string
+                  format: date
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                notes:
+                  type: string
+                source_message_id:
+                  type: string
+      responses:
+        "200":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+                  status:
+                    type: string
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        message_id:
+          type: string
+        source:
+          type: string
+        from_name:
+          type: string
+        from_email:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+    DraftResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+        draft_subject:
+          type: string
+        draft_body:
+          type: string
+        reasoning_summary:
+          type: string
+        needs_approval:
+          type: boolean
+        risk_level:
+          type: string
+          enum: [low, medium, high]
