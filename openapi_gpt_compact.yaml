@@ -1,0 +1,165 @@
+openapi: 3.1.0
+info:
+  title: Rise X Assistant API
+  version: 1.0.0
+  description: Compact GPT Actions schema for communication triage, follow-ups, calendar, and travel.
+servers:
+  - url: "https://rise-x-assistant-api.onrender.com"
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Check API health
+      security: []
+      responses:
+        "200":
+          description: OK
+  /sources/status:
+    get:
+      operationId: getSourceStatus
+      summary: Check connected sources
+      responses:
+        "200":
+          description: Connected source status
+  /messages/unread:
+    get:
+      operationId: getUnreadMessages
+      summary: Get unread or recent messages
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [gmail, outlook, slack, sms, imessage, crm, helpdesk, all]
+            default: all
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Messages
+        "409":
+          description: Source unavailable
+  /communications/triage:
+    post:
+      operationId: triageCommunications
+      summary: Triage email, texts, or pasted communications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: string
+                    enum: [gmail, outlook, slack, sms, imessage, crm, helpdesk, pasted]
+                limit:
+                  type: integer
+                  default: 50
+                pasted_content:
+                  type: string
+                include_draft_replies:
+                  type: boolean
+                  default: true
+                include_cleanup_recommendations:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Triage result with priorities, drafts, follow-ups, and cleanup recommendations
+        "409":
+          description: Source unavailable and no pasted content
+  /tasks:
+    post:
+      operationId: createTask
+      summary: Create follow-up task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                owner:
+                  type: string
+                  default: Lauren
+                due_date:
+                  type: string
+                  format: date
+                priority:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                notes:
+                  type: string
+                source_message_id:
+                  type: string
+      responses:
+        "200":
+          description: Task created
+  /calendar/plan:
+    post:
+      operationId: planCalendar
+      summary: Plan calendar changes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date_range:
+                  type: string
+                goal:
+                  type: string
+                constraints:
+                  type: string
+                pasted_calendar:
+                  type: string
+      responses:
+        "200":
+          description: Calendar plan
+  /travel/plan:
+    post:
+      operationId: planTravel
+      summary: Plan travel options
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination, dates_or_window]
+              properties:
+                origin:
+                  type: string
+                destination:
+                  type: string
+                dates_or_window:
+                  type: string
+                purpose:
+                  type: string
+                budget:
+                  type: string
+                preferences:
+                  type: string
+                constraints:
+                  type: string
+      responses:
+        "200":
+          description: Travel plan
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
