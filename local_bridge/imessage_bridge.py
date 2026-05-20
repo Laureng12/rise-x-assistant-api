@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -24,6 +25,26 @@ def apple_time_to_iso(value: Optional[int]) -> Optional[str]:
         return None
     seconds = value / 1_000_000_000 + 978_307_200
     return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+
+
+def decode_attributed_body(value: Optional[bytes]) -> Optional[str]:
+    if not value:
+        return None
+    decoded = bytes(value).decode("utf-8", "ignore")
+    marker = "NSString"
+    start = decoded.find(marker)
+    if start == -1:
+        return None
+    text = decoded[start + len(marker):]
+    stop = text.find("NSDictionary")
+    if stop != -1:
+        text = text[:stop]
+    text = re.sub(r"^[\x00-\x1f\x7f-\x9f\s\W]+", "", text)
+    text = text.replace("\ufffc", "")
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]+", "", text)
+    text = re.sub(r"iI$", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text or None
 
 
 def copy_messages_db() -> Path:
@@ -56,6 +77,7 @@ def recent_messages(
             message.date AS sent_at,
             message.is_from_me AS is_from_me,
             message.is_read AS is_read,
+            message.item_type AS item_type,
             message.service AS service,
             chat.chat_identifier AS chat_identifier
         FROM message
@@ -66,7 +88,7 @@ def recent_messages(
     """
     params = []
     if unread_only:
-        query += " AND message.is_read = 0 AND message.is_from_me = 0"
+        query += " AND message.is_read = 0 AND message.is_from_me = 0 AND message.item_type = 0"
     query += " ORDER BY message.date DESC LIMIT ?"
     params.append(max(1, min(limit, 200)))
 
@@ -77,21 +99,25 @@ def recent_messages(
     except sqlite3.Error as exc:
         raise HTTPException(status_code=500, detail=f"Could not read Messages database: {exc}")
 
-    return {
-        "messages": [
+    messages = []
+    for row in rows:
+        decoded_body = decode_attributed_body(row["attributed_body"])
+        body = row["body"] or decoded_body or (
+            "[Message content is not available as plain text in the local Messages database.]"
+        )
+        messages.append(
             {
                 "message_id": f"imessage_{row['message_id']}",
                 "source": "imessage" if row["service"] == "iMessage" else "sms",
                 "sender": row["sender"] or row["chat_identifier"] or "unknown",
-                "body": row["body"] or (
-                    "[Message content is not available as plain text in the local Messages database.]"
-                ),
+                "body": body,
                 "has_plain_text_body": row["body"] is not None,
+                "has_decoded_attributed_body": decoded_body is not None,
                 "has_attributed_body": row["attributed_body"] is not None,
+                "item_type": row["item_type"],
                 "sent_at": apple_time_to_iso(row["sent_at"]),
                 "is_from_me": bool(row["is_from_me"]),
                 "is_read": bool(row["is_read"]),
             }
-            for row in rows
-        ]
-    }
+        )
+    return {"messages": messages}
