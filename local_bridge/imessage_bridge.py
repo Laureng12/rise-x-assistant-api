@@ -56,9 +56,12 @@ def recent_messages(
             message.date AS sent_at,
             message.is_from_me AS is_from_me,
             message.is_read AS is_read,
-            message.service AS service
+            message.service AS service,
+            chat.chat_identifier AS chat_identifier
         FROM message
         LEFT JOIN handle ON message.handle_id = handle.ROWID
+        LEFT JOIN chat_message_join ON chat_message_join.message_id = message.ROWID
+        LEFT JOIN chat ON chat.ROWID = chat_message_join.chat_id
         WHERE message.is_empty = 0
     """
     params = []
@@ -79,7 +82,7 @@ def recent_messages(
             {
                 "message_id": f"imessage_{row['message_id']}",
                 "source": "imessage" if row["service"] == "iMessage" else "sms",
-                "sender": row["sender"] or "unknown",
+                "sender": row["sender"] or row["chat_identifier"] or "unknown",
                 "body": row["body"] or (
                     "[Message content is not available as plain text in the local Messages database.]"
                 ),
