@@ -2,14 +2,17 @@ openapi: 3.1.0
 info:
   title: Rise-X Founder Assistant API
   version: 1.0.0
-  description: API actions for reading messages, drafting responses, saving drafts, and creating follow-up tasks.
+  description: API actions for reading and triaging communications, drafting responses, managing follow-ups, planning calendar changes, and preparing travel options.
 servers:
   - url: https://rise-x-assistant-api.onrender.com
+security:
+  - bearerAuth: []
 paths:
   /health:
     get:
       operationId: healthCheck
       summary: Check API health
+      security: []
       responses:
         "200":
           description: API is healthy
@@ -20,18 +23,37 @@ paths:
                 properties:
                   status:
                     type: string
+  /sources/status:
+    get:
+      operationId: getSourceStatus
+      summary: Check connected sources
+      description: Returns which communication sources are currently connected and available.
+      responses:
+        "200":
+          description: Source connection status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SourceStatus"
+        "401":
+          description: Unauthorized
   /messages/unread:
     get:
       operationId: getUnreadMessages
       summary: Get unread messages
-      description: Returns unread or recent messages from connected communication sources.
+      description: Returns unread or recent messages from connected communication sources. If no requested source is connected, the API returns a 409 so the GPT can ask the user to connect a source or paste messages.
       parameters:
         - name: source
           in: query
           required: false
           schema:
             type: string
-            enum: [gmail, outlook, slack, sms, crm, helpdesk, all]
+            enum: [gmail, outlook, slack, sms, imessage, crm, helpdesk, all]
             default: all
         - name: limit
           in: query
@@ -51,6 +73,116 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Message"
+        "401":
+          description: Unauthorized
+        "409":
+          description: Requested source is not connected
+  /communications/triage:
+    post:
+      operationId: triageCommunications
+      summary: Triage communications
+      description: Triage connected or provided email/text/message content into priority buckets, draft response recommendations, and suggest follow-ups. Does not delete, send, unsubscribe, or modify anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: string
+                    enum: [gmail, outlook, slack, sms, imessage, crm, helpdesk, pasted]
+                  default: [gmail, outlook, sms]
+                limit:
+                  type: integer
+                  default: 50
+                pasted_content:
+                  type: string
+                  description: Optional pasted/exported messages when no source is connected.
+                include_draft_replies:
+                  type: boolean
+                  default: true
+                include_cleanup_recommendations:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Triage result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriageResult"
+        "401":
+          description: Unauthorized
+        "409":
+          description: Requested source is not connected and no pasted content was provided
+  /messages/bulk-action-plan:
+    post:
+      operationId: planMessageBulkActions
+      summary: Plan message cleanup actions
+      description: Creates an approval-ready plan for archive, delete, mark spam, unsubscribe, or follow-up actions. Does not execute the actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message_ids, requested_action]
+              properties:
+                message_ids:
+                  type: array
+                  items:
+                    type: string
+                requested_action:
+                  type: string
+                  enum: [archive, delete, mark_spam, unsubscribe, create_followups]
+                rationale:
+                  type: string
+      responses:
+        "200":
+          description: Approval-ready action plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionPlan"
+        "401":
+          description: Unauthorized
+  /messages/execute-approved-actions:
+    post:
+      operationId: executeApprovedMessageActions
+      summary: Execute approved message actions
+      description: Executes approved archive, delete, spam, unsubscribe, or follow-up actions only after explicit user approval.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action_plan_id, approval_confirmation]
+              properties:
+                action_plan_id:
+                  type: string
+                approval_confirmation:
+                  type: string
+                  description: Explicit approval text from the user.
+      responses:
+        "200":
+          description: Approved actions executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  executed_count:
+                    type: integer
+        "400":
+          description: Explicit approval required
+        "401":
+          description: Unauthorized
   /messages/{message_id}/thread:
     get:
       operationId: getMessageThread
@@ -74,6 +206,10 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Message"
+        "401":
+          description: Unauthorized
+        "409":
+          description: No communication source is connected for thread lookup
   /responses/draft:
     post:
       operationId: draftResponse
@@ -106,6 +242,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DraftResponse"
+        "401":
+          description: Unauthorized
   /responses/save-draft:
     post:
       operationId: saveDraft
@@ -137,6 +275,8 @@ paths:
                     type: string
                   status:
                     type: string
+        "401":
+          description: Unauthorized
   /responses/send-approved:
     post:
       operationId: sendApprovedResponse
@@ -167,6 +307,10 @@ paths:
                     type: string
                   status:
                     type: string
+        "400":
+          description: Explicit approval required
+        "401":
+          description: Unauthorized
   /tasks:
     post:
       operationId: createTask
@@ -208,8 +352,90 @@ paths:
                     type: string
                   status:
                     type: string
+        "401":
+          description: Unauthorized
+  /calendar/plan:
+    post:
+      operationId: planCalendar
+      summary: Plan calendar changes
+      description: Reviews calendar constraints or pasted schedule details and returns conflicts, priorities, and proposed calendar changes. Does not create, move, or cancel events.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date_range:
+                  type: string
+                  description: Natural language or ISO date range to review.
+                goal:
+                  type: string
+                  description: What the plan should optimize for.
+                constraints:
+                  type: string
+                pasted_calendar:
+                  type: string
+                  description: Optional pasted/exported calendar details.
+      responses:
+        "200":
+          description: Calendar plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarPlan"
+        "401":
+          description: Unauthorized
+  /travel/plan:
+    post:
+      operationId: planTravel
+      summary: Plan travel options
+      description: Builds travel options and logistics from the user's constraints. Does not book travel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [destination, dates_or_window]
+              properties:
+                origin:
+                  type: string
+                destination:
+                  type: string
+                dates_or_window:
+                  type: string
+                purpose:
+                  type: string
+                budget:
+                  type: string
+                preferences:
+                  type: string
+                constraints:
+                  type: string
+      responses:
+        "200":
+          description: Travel plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TravelPlan"
+        "401":
+          description: Unauthorized
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
+    SourceStatus:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [gmail, outlook, slack, sms, imessage, crm, helpdesk]
+        connected:
+          type: boolean
     Message:
       type: object
       properties:
@@ -228,6 +454,121 @@ components:
         received_at:
           type: string
           format: date-time
+    TriageItem:
+      type: object
+      properties:
+        message_id:
+          type: string
+        source:
+          type: string
+        sender:
+          type: string
+        subject:
+          type: string
+        bucket:
+          type: string
+          enum: [needs_reply, needs_review, calendar_scheduling, follow_up_later, waiting_on_someone_else, archive, possible_spam_delete, receipts_newsletters, high_risk]
+        priority:
+          type: string
+          enum: [low, medium, high]
+        summary:
+          type: string
+        recommended_action:
+          type: string
+        draft_response:
+          type: string
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+    TriageResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TriageItem"
+        follow_ups:
+          type: array
+          items:
+            $ref: "#/components/schemas/FollowUpRecommendation"
+        cleanup_recommendations:
+          type: array
+          items:
+            type: string
+        needs_user_approval:
+          type: boolean
+    FollowUpRecommendation:
+      type: object
+      properties:
+        title:
+          type: string
+        owner:
+          type: string
+        due_date:
+          type: string
+          format: date
+        priority:
+          type: string
+          enum: [low, medium, high]
+        source_message_id:
+          type: string
+        notes:
+          type: string
+    ActionPlan:
+      type: object
+      properties:
+        action_plan_id:
+          type: string
+        requested_action:
+          type: string
+        item_count:
+          type: integer
+        rationale:
+          type: string
+        requires_approval:
+          type: boolean
+    CalendarPlan:
+      type: object
+      properties:
+        summary:
+          type: string
+        conflicts:
+          type: array
+          items:
+            type: string
+        proposed_changes:
+          type: array
+          items:
+            type: string
+        follow_ups:
+          type: array
+          items:
+            $ref: "#/components/schemas/FollowUpRecommendation"
+        requires_approval:
+          type: boolean
+    TravelPlan:
+      type: object
+      properties:
+        summary:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        constraints:
+          type: array
+          items:
+            type: string
+        estimated_budget:
+          type: string
+        risks:
+          type: array
+          items:
+            type: string
+        next_actions:
+          type: array
+          items:
+            type: string
     DraftResponse:
       type: object
       properties:
