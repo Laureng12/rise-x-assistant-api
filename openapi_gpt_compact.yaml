@@ -42,6 +42,30 @@ paths:
       responses:
         "200":
           description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message_id:
+                          type: string
+                        source:
+                          type: string
+                        sender:
+                          type: string
+                        body:
+                          type: string
+                        sent_at:
+                          type: string
+                        is_read:
+                          type: boolean
+                        has_decoded_attributed_body:
+                          type: boolean
         "409":
           description: Source unavailable
   /communications/triage:
