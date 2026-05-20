@@ -52,13 +52,14 @@ def recent_messages(
             message.ROWID AS message_id,
             handle.id AS sender,
             message.text AS body,
+            message.attributedBody AS attributed_body,
             message.date AS sent_at,
             message.is_from_me AS is_from_me,
             message.is_read AS is_read,
             message.service AS service
         FROM message
         LEFT JOIN handle ON message.handle_id = handle.ROWID
-        WHERE message.text IS NOT NULL
+        WHERE message.is_empty = 0
     """
     params = []
     if unread_only:
@@ -79,7 +80,11 @@ def recent_messages(
                 "message_id": f"imessage_{row['message_id']}",
                 "source": "imessage" if row["service"] == "iMessage" else "sms",
                 "sender": row["sender"] or "unknown",
-                "body": row["body"],
+                "body": row["body"] or (
+                    "[Message content is not available as plain text in the local Messages database.]"
+                ),
+                "has_plain_text_body": row["body"] is not None,
+                "has_attributed_body": row["attributed_body"] is not None,
                 "sent_at": apple_time_to_iso(row["sent_at"]),
                 "is_from_me": bool(row["is_from_me"]),
                 "is_read": bool(row["is_read"]),
