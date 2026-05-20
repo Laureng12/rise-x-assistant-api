@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Rise-X Founder Assistant API
+  title: Rise X Assistant API
   version: 1.0.0
   description: API actions for reading and triaging communications, drafting responses, managing follow-ups, planning calendar changes, and preparing travel options.
 servers:
-  - url: https://rise-x-assistant-api.onrender.com
+  - url: "https://rise-x-assistant-api.onrender.com"
 security:
   - bearerAuth: []
 paths:
